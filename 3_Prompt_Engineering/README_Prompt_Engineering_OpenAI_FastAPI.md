@@ -882,7 +882,7 @@ Rules:
 - Avoid unnecessary jargon.
 - Keep the answer focused on the user's question.
 """
-
+ 
 
 class PromptRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
