@@ -1,19 +1,35 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pypdf import PdfReader
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from openai import OpenAI
-from enum import Enum
-import io
+# main.py
 
+from fastapi import FastAPI
 
-load_dotenv()
+from app.models.models import ChatRequest
+from app.services.ai_service import process_message
+
 
 app = FastAPI(
-    title="AI Learning API",
-    description="Learning FastAPI and OpenAI API",
+    title="AI Tool Calling API",
+    description="FastAPI + OpenAI Function Calling",
     version="1.0.0"
 )
 
-client = OpenAI()
 
+@app.get("/")
+def home():
+
+    return {
+        "application": "AI Tool Calling API",
+        "status": "running"
+    }
+
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+
+    response = process_message(
+        request.message
+    )
+
+    return {
+        "message": request.message,
+        "response": response
+    }

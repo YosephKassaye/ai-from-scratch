@@ -267,97 +267,114 @@ The `call_id` connects the function result to the correct tool request.
 
 ---
 
-# 11. Complete Basic Example
+# 11. Multi-Tool Implementation + Project Structure (Current)
+
+The project now supports multiple tools (`get_weather`, `get_customer`) and uses a safer continuation pattern with `previous_response_id`.
+
+Why this matters:
+
+```text
+When the model emits function_call items, do not replay raw response.output items
+back as-is in a new request. Instead, send function_call_output items and continue
+from previous_response_id.
+```
+
+Current structure used in this project:
+
+```text
+5_Functions_Tools/
+├── README_Function_Tool_Calling_OpenAI_FastAPI.md
+└── app/
+    ├── __init__.py
+    ├── main.py
+    ├── models/
+    │   └── models.py
+    ├── services/
+    │   └── ai_service.py
+    └── tools/
+        ├── tools.py
+        └── tool_executor.py
+```
+
+Section responsibilities:
+
+```text
+app/main.py
+  FastAPI routes and request/response wiring
+
+app/models/models.py
+  Pydantic request models (for example, ChatRequest)
+
+app/tools/tools.py
+  Tool functions + OpenAI tool schemas + TOOL_FUNCTIONS registry
+
+app/tools/tool_executor.py
+  Executes requested tools from tool name + JSON arguments
+
+app/services/ai_service.py
+  Orchestrates OpenAI calls, tool detection, and continuation
+```
+
+Updated multi-tool orchestration pattern:
 
 ```python
 import json
+from dotenv import load_dotenv
 from openai import OpenAI
 
+from app.tools.tools import TOOLS
+from app.tools.tool_executor import execute_tool
+
+
+load_dotenv()
 client = OpenAI()
 
 
-def get_weather(location: str):
+def process_message(message: str) -> str:
+    response = client.responses.create(
+        model="gpt-5",
+        instructions="""
+        You are a helpful AI assistant.
+        Use available tools when necessary.
+        If the user asks about weather, use get_weather.
+        If the user asks about a customer, use get_customer.
+        """,
+        input=message,
+        tools=TOOLS
+    )
 
-    return {
-        "location": location,
-        "temperature": 72,
-        "unit": "fahrenheit",
-        "condition": "Sunny"
-    }
+    tool_outputs = []
 
-
-tools = [
-    {
-        "type": "function",
-        "name": "get_weather",
-        "description": "Get the current weather for a location.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "City and state or city and country."
+    for item in response.output:
+        if item.type == "function_call":
+            result = execute_tool(item.name, item.arguments)
+            tool_outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": item.call_id,
+                    "output": json.dumps(result)
                 }
-            },
-            "required": ["location"],
-            "additionalProperties": False
-        },
-        "strict": True
-    }
-]
+            )
 
-
-input_items = [
-    {
-        "role": "user",
-        "content": "What is the weather in Los Angeles?"
-    }
-]
-
-
-response = client.responses.create(
-    model="gpt-6-astra",
-    input=input_items,
-    tools=tools
-)
-
-
-input_items += response.output
-
-
-for item in response.output:
-
-    if item.type == "function_call":
-
-        args = json.loads(item.arguments)
-
-        result = get_weather(
-            location=args["location"]
+    if tool_outputs:
+        follow_up = client.responses.create(
+            model="gpt-5",
+            previous_response_id=response.id,
+            input=tool_outputs,
+            tools=TOOLS
         )
+        return follow_up.output_text
 
-        input_items.append(
-            {
-                "type": "function_call_output",
-                "call_id": item.call_id,
-                "output": json.dumps(result)
-            }
-        )
-
-
-final_response = client.responses.create(
-    model="gpt-6-astra",
-    input=input_items,
-    tools=tools
-)
-
-
-print(final_response.output_text)
+    return response.output_text
 ```
 
-Possible final answer:
+Benefits of this approach:
 
 ```text
-The weather in Los Angeles is sunny and 72°F.
+Supports multiple tools in one request
+Keeps tool dispatch logic reusable
+Avoids function_call/reasoning mismatch errors
+Matches a clean service-first project layout
 ```
 
 ---
