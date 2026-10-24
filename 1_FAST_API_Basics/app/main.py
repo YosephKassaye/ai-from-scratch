@@ -5,6 +5,11 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     message: str
 
+class studentRequest(BaseModel):
+    name: str
+    age: int
+    email: str
+
 @app.get("/")
 def home():
     return {
@@ -53,4 +58,12 @@ def search(query: str, limit: int = 5):
 def chat(request: ChatRequest):
     return {
         "received_message": request.message
+    }
+
+@app.post("/students")
+def create_student(request: studentRequest):
+    return {
+        "name": request.name,
+        "age": request.age,
+        "email": request.email
     }
